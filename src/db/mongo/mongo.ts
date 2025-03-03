@@ -1,6 +1,7 @@
 import { connect, Schema, Model, model, Types, Document } from "mongoose";
 
-export const conn = connect("")
+export const conn = connect(process.env.NODE_ENV! == 'production' ? process.env.MONGO_URI_PROD! : 'mongodb://localhost:27017/flash-sale')
+
 
 export interface IUser extends Document {
     _id: Types.ObjectId;
@@ -13,7 +14,7 @@ type MUser = Model<IUser>
 const userSchema = new Schema<IUser, MUser>({
     name: { type: String, required: true },
     email: { type: String, required: true, unique: true },
-    password: { type: String, required: true },
+    password: { type: String, required: true, select: false },
 })
 
 export const User = model("User", userSchema)
@@ -29,7 +30,7 @@ type MProduct = Model<IProduct>
 
 const productSchema = new Schema<IProduct, MProduct>({
     name: { type: String, required: true },
-    desc: { type: String, required: true },
+    desc: { type: String },
     price: { type: Number, required: true },
 })
 export const Product = model("Product", productSchema)
@@ -57,6 +58,7 @@ export interface IOrder extends Document {
     quantity: number;
     
     amount_paid: number;
+    status: 'pending' | 'completed' | 'failed';
 }
 
 type MOrder = Model<IOrder>
@@ -66,6 +68,13 @@ const orderSchema = new Schema<IOrder, MOrder>({
     product_id: { type: Schema.Types.ObjectId, required: true, ref: 'Product'},
     quantity: { type: Number, required: true },
     amount_paid: { type: Number, required: true },
+
+    status: { 
+        type: String, 
+        enum: ['pending', 'completed', 'failed'], 
+        default: 'pending',
+        required: true 
+    }
 })
 
 export const Order = model("Order", orderSchema)
@@ -80,6 +89,8 @@ interface ISale extends Document {
     price_per_unit: number;
 
     remaining_units: number;
+    status: 'scheduled' | 'active' | 'ended';
+    purchase_limit: number;  // maximum number of purchases per sale per user. 0 for unlimited.
 }
 
 type MSale = Model<ISale>
@@ -90,7 +101,17 @@ const saleSchema = new Schema<ISale, MSale>({
     end_time: { type: Date, required: false},
     allocated_units: { type: Number, required: true, default: 1},
     remaining_units: { type: Number, required: true },
-    price_per_unit: { type: Number, required: true, default: 0}
-})
+    price_per_unit: { type: Number, required: true, default: 0},
+    status: { 
+        type: String, 
+        enum: ['scheduled', 'active', 'ended'], 
+        default: 'scheduled',
+        required: true 
+      },
+    purchase_limit: { type: Number, default: 1 }
+},{
+    timestamps: true,
+    optimisticConcurrency: true,
+  })
 
 export const Sale = model("Sale", saleSchema)
