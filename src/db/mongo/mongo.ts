@@ -15,7 +15,9 @@ const userSchema = new Schema<IUser, MUser>({
     name: { type: String, required: true },
     email: { type: String, required: true, unique: true },
     password: { type: String, required: true, select: false },
-})
+},{
+    timestamps: true,
+  })
 
 export const User = model("User", userSchema)
 
@@ -32,7 +34,9 @@ const productSchema = new Schema<IProduct, MProduct>({
     name: { type: String, required: true },
     desc: { type: String },
     price: { type: Number, required: true },
-})
+},{
+    timestamps: true,
+  })
 export const Product = model("Product", productSchema)
 
 
@@ -47,7 +51,9 @@ type MInventory = Model<IInventory>
 const inventorySchema = new Schema<IInventory, MInventory>({
     product_id: { type: Schema.Types.ObjectId, required: true, ref: 'Product' },
     quantity: { type: Number, required: true },
-})
+}, {
+    timestamps: true,
+  })
 
 export const Inventory = model("Inventory", inventorySchema)
 
@@ -75,7 +81,9 @@ const orderSchema = new Schema<IOrder, MOrder>({
         default: 'pending',
         required: true 
     }
-})
+},{
+    timestamps: true,
+  })
 
 export const Order = model("Order", orderSchema)
 

@@ -12,6 +12,7 @@ import { setupWebsocket } from "./utils/realtime";
 import { conn } from "./db/mongo/mongo";
 
 
+
 dotenv.config();
 
 // Initialize express app
@@ -21,7 +22,7 @@ const io = new Server(httpServer);
 
 // Connect to MongoDB
 conn
-  .then(() => console.log('MongoDB connected'))
+  .then((r) => { console.log('MongoDB connected')})
   .catch(err => console.error('MongoDB connection error:', err));
 
 // Initialize Redis client

@@ -1,183 +1,205 @@
 import { Request, Response, NextFunction } from "express";
-import { conn, Order, Sale, IOrder } from "../db/mongo/mongo";
+import { conn, Order, Sale, IOrder, Inventory } from "../db/mongo/mongo";
 import mongoose, { Document } from "mongoose";
 import { redisClient } from "../app";
+import { io } from "../utils/realtime";
+import { connection } from "mongoose";
 
 export async function fetchSale(req: Request, res: Response): Promise<any> {
-	const { sale_id } = req.body;
-	//fetch from cache
+  const sale_id = req.params.id;
+  //fetch from cache
 
-	const sale = await getFlashSaleStatus(sale_id)
+  const sale = await getFlashSaleStatus(sale_id);
 
-	//cache miss?  fetch from db
+  //cache miss?  fetch from db
 
-	
-	if (!sale) return res.status(404).json({ msg: "Product not found" });
+  if (!sale) return res.status(404).json({ msg: "Product not found" });
 
-	return res.status(200).json({msg: 'success', data: sale});
+  return res.status(200).json({ msg: "success", data: sale });
 }
 
 export async function buyStock(req: Request, res: Response): Promise<any> {
-	const { sale_id, quantity, user_id } = req.body;
+  const { sale_id, quantity, user_id } = req.body; //TODO: change to fetch user_id from token
 
-	const sale = await Sale.findById(sale_id); //TODO: change to fetch first from cache
+  const sale = await Sale.findById(sale_id);
 
-	if (!sale) return res.status(404).json({ msg: "Product not found" });
+  if (!sale) return res.status(404).json({ msg: "Product not found" });
 
-	//check for timing restrictions
-	if (new Date() < sale.start_time) {
-		throw new Error("Flash sale has not started yet");
-	}
+  //check for timing restrictions
+  if (new Date() < sale.start_time) {
+    throw new Error("Flash sale has not started yet");
+  }
 
-	//Use Redis WATCH for optimistic locking
-	const inventoryKey = `flashsale:${sale_id}:inventory`;
+  //Use Redis WATCH for optimistic locking
+  const inventoryKey = `flashsale:${sale_id}:inventory`;
+  await redisClient.watch(inventoryKey);
 
-	// Start a Redis transaction to handle concurrency
-	const result = await redisClient.multi().get(inventoryKey).exec();
+  const currentInventoryStr = await redisClient.get(inventoryKey);
+  if (!currentInventoryStr) {
+    throw new Error("Failed to read inventory");
+  }
 
-	if (!result || !result[0] || result[0][0]) {
-		throw new Error("Failed to read inventory");
-	}
+  const currentInventory = parseInt(currentInventoryStr, 10);
+  console.log("Current Inventory:", currentInventory);
 
-	const currentInventory = parseInt(result[0][1] as string, 10);
+  // **Step 2: Check Inventory Before Proceeding**
+  if (currentInventory < quantity) {
+    await redisClient.unwatch(); // Release watch if condition fails
+    return res.status(403).json({ msg: "Not enough units available" });
+  }
 
-	// Check if enough inventory
-	if (currentInventory < quantity) {
-		return res.status(403).json({ msg: "Not enough units available" });
-	}
+  const transaction = redisClient.multi();
+  transaction.decrby(inventoryKey, quantity);
+  const results = await transaction.exec();
 
-	// Use Lua script for atomic decrement and check
-	const decrementScript = `
-          local current = tonumber(redis.call('get', KEYS[1]))
-          local decrement = tonumber(ARGV[1])
-          if current >= decrement then
-            redis.call('decrby', KEYS[1], decrement)
-            return 1
-          else
-            return 0
-          end
-        `;
+  console.log(results)
 
-	const decrementResult = await redisClient.eval(
-		decrementScript,
-		1,
-		inventoryKey,
-		quantity.toString()
-	);
+  if (!results) {
+    throw new Error("Inventory update failed due to concurrent modification");
+  }
 
-	if (decrementResult !== 1) {
-		throw new Error("Failed to reserve inventory");
-	}
+  console.log("Inventory decremented successfully.");
 
-	//begin txn
+  //begin txn
+ 
+  const session = await connection.startSession();
 
-	const session = await (await conn).startSession();
+  session.startTransaction();
+  let order;
+  let failed = false;
+  try {
+	console.log('ruuuuu')
+    order = new Order({
+      product_id: sale.product_id,
+      user_id,
+      quantity,
+      amount_paid: sale.price_per_unit * quantity,
+    }, { session });
+	console.log('ruuuuu')
+    const f = await Sale.findOneAndUpdate(
+      { _id: sale_id, remaining_units: { $gte: Number(quantity) } }, // Prevents decrement if not enough stock
+      { $inc: { remaining_units: -Number(quantity) } },
+      { session }
+    );
 
-	session.startTransaction();
-	let order;
-	let failed = false;
-	try {
-		order = await Order.create({
-			product_id: sale.product_id,
-			user_id,
-			quantity,
-			amount_paid: sale.price_per_unit * quantity,
-		});
+	console.log('ffff', f)
 
+    // Complete the purchase
+    order.status = "completed";
+    await order.save({ session });
+    await session.commitTransaction();
 
-		await Sale.findByIdAndUpdate(sale_id, {
-			$inc: { remaining_units: -Number(quantity) },
-		}, { session });
+    // const status = await getFlashSaleStatus(sale_id)
 
+    // Broadcast inventory update
 
-		// Complete the purchase
-		order.status = 'completed';
-		await order.save({ session });
+    io.emit("inventoryUpdate", {
+      sale,
+      currentInventory: sale.remaining_units,
+    });
+  } catch (error) {
+    failed = true;
+    // If MongoDB transaction fails, rollback Redis changes
+    await redisClient.incrby(inventoryKey, quantity);
+    await session.abortTransaction();
+	throw error
+  }
 
-		session.commitTransaction();
+  await session.endSession();
 
-		// const status = await getFlashSaleStatus(sale_id)
+  if (failed) {
+    return res.status(500).json({ msg: "could not buy stock" });
+  }
 
-		// Broadcast inventory update
+  return res.status(200).json({ msg: "success", data: order });
+}
 
-		// io.emit('inventoryUpdate', {
-		// 	sale,
-		// 	currentInventory: status.currentInventory
-		// });
-	} catch (error) {
-		failed = true;
-		// If MongoDB transaction fails, rollback Redis changes
-		await redisClient.incrby(inventoryKey, quantity);
-		session.abortTransaction();
-	}
+export async function createSale(req: Request, res: Response): Promise<any> {
+  const { product_id, allocated_units, start_time, end_time, price_per_unit } =
+    req.body;
 
-	session.endSession();
+  const inv = await Inventory.findOne({ product_id });
 
-	if (!failed) {
-		return res.status(500).json({ msg: "could not buy stock" });
-	}
+  if (!inv) return res.status(404).json({ msg: "product not found" });
 
-	return res.status(200).json({ msg: "success", data: order });
+  if (inv.quantity < allocated_units)
+    return res.status(403).json({ msg: "not enough stock in inventory" });
+
+  const flashSale = await Sale.create({
+    product_id,
+    allocated_units,
+    start_time,
+    remaining_units: allocated_units,
+    end_time,
+    price_per_unit,
+  });
+
+  inv.$inc("quantity", -allocated_units);
+  inv.save();
+
+  return res.status(200).json({ msg: "success", data: flashSale });
 }
 
 export async function startSale(req: Request, res: Response): Promise<any> {
-	const { product_id, allocated_units, start_time, end_time } = req.body;
+  const { start_time, end_time } = req.body;
+  const sale_id = req.params.id;
 
-	const flashSale = await Sale.create({
-		product_id,
-		allocated_units,
-		start_time,
-		remaining_units: allocated_units,
-	});
+  const sale = await Sale.findByIdAndUpdate(sale_id, {
+    start_time,
+    end_time,
+    status: "active",
+  });
 
-	await initFlashSaleCache(flashSale._id.toString(), flashSale.remaining_units);
+  if (!sale) return res.status(404).json({ msg: "sale not found" });
 
-	// io.emit('flashSaleStarted', {
-    //     id: flashSale._id,
-    //     currentInventory: flashSale.remaining_units,
-    //     status: flashSale.status
-    // });
+  await initFlashSaleCache(sale_id, sale?.remaining_units, "active");
+
+  io.emit("flashSaleStarted", {
+    id: sale_id,
+    currentInventory: sale.remaining_units,
+    status: sale.status,
+  });
+
+  return res.status(200).json({ msg: "success", data: sale });
 }
 
 async function initFlashSaleCache(
-	flashSaleId: string,
-	inventory: number
+  flashSaleId: string,
+  inventory: number,
+  status = "scheduled"
 ): Promise<void> {
-	await redisClient.set(`flashsale:${flashSaleId}:inventory`, inventory);
-	await redisClient.set(`flashsale:${flashSaleId}:status`, "active");
+  await redisClient.set(`flashsale:${flashSaleId}:inventory`, inventory);
+  await redisClient.set(`flashsale:${flashSaleId}:status`, status);
 }
-
 
 async function getFlashSaleStatus(flashSaleId: string): Promise<any> {
-    // First check cache
-    const [inventoryStr, statusStr] = await Promise.all([
-      redisClient.get(`flashsale:${flashSaleId}:inventory`),
-      redisClient.get(`flashsale:${flashSaleId}:status`)
-    ]);
-    
-    // If not in cache, fetch from DB
-    if (!inventoryStr || !statusStr) {
-      const flashSale = await Sale.findById(flashSaleId);
-      if (!flashSale) {
-        throw new Error('Flash sale not found');
-      }
-      
-      return {
-        id: flashSale._id,
-        currentInventory: flashSale.remaining_units,
-        totalInventory: flashSale.allocated_units,
-        status: flashSale.status,
-        startTime: flashSale.start_time,
-        endTime: flashSale.end_time
-      };
+  // First check cache
+  const [inventoryStr, statusStr] = await Promise.all([
+    redisClient.get(`flashsale:${flashSaleId}:inventory`),
+    redisClient.get(`flashsale:${flashSaleId}:status`),
+  ]);
+
+  // If not in cache, fetch from DB
+  if (!inventoryStr || !statusStr) {
+    const flashSale = await Sale.findById(flashSaleId);
+    if (!flashSale) {
+      throw new Error("Flash sale not found");
     }
-    
-    // Return cache data
+
     return {
-      id: flashSaleId,
-      currentInventory: parseInt(inventoryStr, 10),
-      status: statusStr
+      id: flashSale._id,
+      currentInventory: flashSale.remaining_units,
+      totalInventory: flashSale.allocated_units,
+      status: flashSale.status,
+      startTime: flashSale.start_time,
+      endTime: flashSale.end_time,
     };
+  }
+
+  // Return cache data
+  return {
+    id: flashSaleId,
+    currentInventory: parseInt(inventoryStr, 10),
+    status: statusStr,
+  };
 }
-
-

@@ -6,7 +6,7 @@ import * as ProductController from '../controller/prod.controller';
 const router = Router();
 
 // Flash Sale routes
-// router.post('/flash-sales', FlashSaleController.createFlashSale);
+router.post('/flash-sales', FlashSaleController.createSale);
 router.post('/flash-sales/:id/start', FlashSaleController.startSale);
 router.get('/flash-sales/:id', FlashSaleController.fetchSale);
 // router.get('/flash-sales/:id/leaderboard', FlashSaleController.getLeaderboard);
