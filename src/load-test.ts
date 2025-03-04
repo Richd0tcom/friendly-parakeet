@@ -1,8 +1,6 @@
 import axios, { AxiosError } from 'axios';
-import * as WebSocket from 'socket.io';
 
 const BASE_URL = 'http://localhost:7321/api';
-const WS_URL = 'ws://localhost:3000/ws';
 const NUM_USERS = 300; // More than the available inventory 300
 const CONCURRENT_REQUESTS = 50; // Number of concurrent requests 50
 
@@ -10,12 +8,6 @@ const CONCURRENT_REQUESTS = 50; // Number of concurrent requests 50
 const userIds = Array.from({ length: NUM_USERS }, (_, i) => `user_${i + 1}`);
 let dbIDs = []
 
-// Connect to WebSocket for real-time updates
-// const ws = new WebSocket(WS_URL);
-// ws.on('message', (data) => {
-//   const message = JSON.parse(data.toString());
-//   console.log(`[WebSocket] Inventory update: ${message.currentInventory} units remaining`);
-// });
 
 async function createUsers(name: string, email: string): Promise<any>{
   try {
@@ -98,13 +90,13 @@ async function runLoadTest() {
   try {
     const response = await axios.get(`${BASE_URL}/flash-sales/67c6229af3aacb324d59745b`);
     console.log(`Final inventory: ${response.data.data.currentInventory}`);
-    if (response.data.currentInventory === 0 && successCount === 200) {
+    if (response.data.data.currentInventory === 0 && successCount === 200) {
       console.log('✅ Test PASSED: All inventory sold, no overbuying or underbuying');
-    } else if (response.data.currentInventory < 0) {
+    } else if (response.data.data.currentInventory < 0) {
       console.log('❌ Test FAILED: Overbuying detected');
-    } else if (successCount < 200 && response.data.currentInventory === 0) {
+    } else if (successCount < 200 && response.data.data.currentInventory === 0) {
       console.log('❌ Test FAILED: Underbuying detected');
-    } else if (response.data.currentInventory > 0 && successCount === 200) {
+    } else if (response.data.data.currentInventory > 0 && successCount === 200) {
       console.log('❌ Test FAILED: Inventory tracking inconsistency');
     }
   } catch (error) {
