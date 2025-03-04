@@ -1,6 +1,5 @@
 import { connect, Schema, Model, model, Types, Document } from "mongoose";
-
-export const conn = connect(process.env.NODE_ENV! == 'production' ? process.env.MONGO_URI_PROD! : 'mongodb://localhost:27017/flash-sale')
+import dotenv from "dotenv"
 
 
 export interface IUser extends Document {
@@ -58,7 +57,6 @@ const inventorySchema = new Schema<IInventory, MInventory>({
 export const Inventory = model("Inventory", inventorySchema)
 
 export interface IOrder extends Document {
-    _id: Types.ObjectId;
     user_id: Types.ObjectId;
     product_id: Types.ObjectId;
     quantity: number;
@@ -119,7 +117,7 @@ const saleSchema = new Schema<ISale, MSale>({
     purchase_limit: { type: Number, default: 1 }
 },{
     timestamps: true,
-    optimisticConcurrency: true,
+    // optimisticConcurrency: true,
   })
 
 export const Sale = model("Sale", saleSchema)

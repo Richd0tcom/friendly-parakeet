@@ -1,6 +1,6 @@
 import { Request, Response, NextFunction } from "express";
-import { conn, Order, Sale, IOrder, Inventory } from "../db/mongo/mongo";
-import mongoose, { Document } from "mongoose";
+import { Order, Sale, IOrder, Inventory } from "../db/mongo/mongo";
+import mongoose, { Document, Types } from "mongoose";
 import { redisClient } from "../app";
 import { io } from "../utils/realtime";
 import { connection } from "mongoose";
@@ -30,6 +30,14 @@ export async function buyStock(req: Request, res: Response): Promise<any> {
     throw new Error("Flash sale has not started yet");
   }
 
+  const statusKey = `flashsale:${sale_id}:status`;
+  if (!statusKey) {
+    throw new Error("Failed to read inventory");
+  }
+  const stat = await redisClient.get(statusKey);
+  if(stat != 'active') {
+    return res.status(403).json({ success: false, msg: "out of stock!" });
+  }
   //Use Redis WATCH for optimistic locking
   const inventoryKey = `flashsale:${sale_id}:inventory`;
   await redisClient.watch(inventoryKey);
@@ -52,7 +60,7 @@ export async function buyStock(req: Request, res: Response): Promise<any> {
   transaction.decrby(inventoryKey, quantity);
   const results = await transaction.exec();
 
-  console.log(results)
+  console.log(results);
 
   if (!results) {
     throw new Error("Inventory update failed due to concurrent modification");
@@ -61,34 +69,43 @@ export async function buyStock(req: Request, res: Response): Promise<any> {
   console.log("Inventory decremented successfully.");
 
   //begin txn
- 
+
   const session = await connection.startSession();
 
   session.startTransaction();
   let order;
   let failed = false;
   try {
-	console.log('ruuuuu')
-    order = new Order({
-      product_id: sale.product_id,
-      user_id,
-      quantity,
-      amount_paid: sale.price_per_unit * quantity,
-    }, { session });
-	console.log('ruuuuu')
+    order = await Order.create(
+      [
+        {
+          _id: new Types.ObjectId(),
+          product_id: sale.product_id,
+          user_id,
+          quantity,
+          amount_paid: sale.price_per_unit * quantity,
+          status: "completed",
+        },
+      ],
+      { session }
+    );
+
     const f = await Sale.findOneAndUpdate(
       { _id: sale_id, remaining_units: { $gte: Number(quantity) } }, // Prevents decrement if not enough stock
       { $inc: { remaining_units: -Number(quantity) } },
       { session }
     );
 
-	console.log('ffff', f)
 
-    // Complete the purchase
-    order.status = "completed";
-    await order.save({ session });
+
+    // // Complete the purchase
     await session.commitTransaction();
 
+    // Check if sale is over after this purchase
+    const newInventory = await redisClient.get(inventoryKey);
+    if (parseInt(newInventory as string, 10) <= 0) {
+      await endFlashSale(sale_id);
+    }
     // const status = await getFlashSaleStatus(sale_id)
 
     // Broadcast inventory update
@@ -102,16 +119,16 @@ export async function buyStock(req: Request, res: Response): Promise<any> {
     // If MongoDB transaction fails, rollback Redis changes
     await redisClient.incrby(inventoryKey, quantity);
     await session.abortTransaction();
-	throw error
+    throw error;
   }
 
   await session.endSession();
 
   if (failed) {
-    return res.status(500).json({ msg: "could not buy stock" });
+    return res.status(500).json({ success: false, msg: "could not buy stock" });
   }
 
-  return res.status(200).json({ msg: "success", data: order });
+  return res.status(200).json({ success: true, data: order });
 }
 
 export async function createSale(req: Request, res: Response): Promise<any> {
@@ -202,4 +219,31 @@ async function getFlashSaleStatus(flashSaleId: string): Promise<any> {
     currentInventory: parseInt(inventoryStr, 10),
     status: statusStr,
   };
+}
+
+async function endFlashSale(flashSaleId: string): Promise<any> {
+  const session = await mongoose.startSession();
+  session.startTransaction();
+
+  try {
+    const flashSale = await Sale.findById(flashSaleId).session(session);
+    if (!flashSale) {
+      throw new Error("Flash sale not found");
+    }
+
+    flashSale.status = "ended";
+    flashSale.end_time = new Date();
+    await flashSale.save({ session });
+
+    // Update Redis
+    await redisClient.set(`flashsale:${flashSaleId}:status`, "ended");
+
+    await session.commitTransaction();
+    return flashSale;
+  } catch (error) {
+    await session.abortTransaction();
+    throw error;
+  } finally {
+    session.endSession();
+  }
 }

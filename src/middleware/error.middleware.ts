@@ -4,6 +4,7 @@ import { BaseError } from '../utils/errors';
 export const errorHandlingMiddleware =  (error: Error, req: Request, res: Response, next: NextFunction) => {
   console.log("I ran")
     if (error instanceof BaseError) {
+      console.log(error.message)
       res.status(error.status)
         .send({
           status: 'error',
@@ -18,6 +19,8 @@ export const errorHandlingMiddleware =  (error: Error, req: Request, res: Respon
         });
         return
     }
+
+    console.log(error.message)
 
     res.status(500)
     .send({
