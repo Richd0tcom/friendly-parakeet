@@ -123,7 +123,7 @@ export async function buyStock(req: Request, res: Response): Promise<any> {
     return res.status(500).json({ success: false, msg: "could not buy stock" });
   }
 
-  return res.status(200).json({ success: true, data: order });
+  return res.status(200).json({ success: true, data: order[0] });
 }
 
 export async function createSale(req: Request, res: Response): Promise<any> {
