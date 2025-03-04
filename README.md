@@ -62,7 +62,7 @@ This is a scalable, high-performance flash sale system designed to handle concur
 git clone https://github.com/richd0tcom/friendly-parakeet.git
 cd friendly-parakeet
 ```
-
+### WITHOUT DOCKER
 2. Install dependencies
 ```bash
 npm install
@@ -70,11 +70,20 @@ npm install
 
 3. Create a `.env` file with the following configurations:
 ```
-MONGODB_URI=mongodb://localhost:27017/flash-sale
+MONGODB_URI=mongodb://localhost:27017/flash-sale?rs0
 REDIS_URI=redis://localhost:6379
-PORT=3000
+PORT=3021
+JWT_SECRET=cia_level_secret
 ```
+### WITH DOCKER
 if you are using docker the enviroments will be setup for you. ensure that nothing else is running on the same port
+
+2. Run
+```bash
+docker-compose up
+```
+
+This will spin up all the services needed as well as their enviroments
 
 ## 🚀 Running the Application
 
@@ -91,10 +100,25 @@ npm start
 
 ## 🧪 Testing
 
+Before Testing, ensure you have created at least one Product, Inventory and Sale as well as starting said sale.
+
+The test script only simulates user `purchases` under high traffic conditions.
+
+Remember to replace the id in the test script with that of the sale you just created.
+
+N/B the test script may crash while creating users initially (for reasons I'm too lazy to debug ). If this happens, simple run the test again.
+
+To rerun finished tests, restart the sale or create another one.
 ### Running Tests
 ```bash
 # Run load test
-npm run test-race
+npm run test-race 
+ # production enviroment after building and starting
+```
+
+```bash
+npm run dev-test
+ # development enviroment without building
 ```
 
 
@@ -105,7 +129,7 @@ npm run test-race
 
 ## 📋 Postman/API Documentation
 
-[Placeholder for API Endpoint Documentation]
+[API Endpoint Documentation](https://documenter.getpostman.com/view/22009828/2sAYdkGTk9)
 
 ## 🔍 Performance Considerations
 
@@ -123,7 +147,7 @@ npm run test-race
 ### Short-term Improvements
 - [ ] Implement comprehensive error logging
 - [ ] Enhance security middleware
-- [ ] Create Dockerfiles
+- [x] Create Dockerfiles
 
 ### Long-term Roadmap
 - [ ] Machine learning-based fraud detection
@@ -143,13 +167,10 @@ Distributed under the MIT License. See `LICENSE` for more information.
 
 ## 📞 Contact
 
-Your Name - [your.email@example.com](mailto:your.email@example.com)
+Your Name - [Richdotcom](mailto:tuberich@gmail.com)
 
-Project Link: [https://github.com/yourusername/flash-sale-system](https://github.com/yourusername/flash-sale-system)
+Project Link: [https://github.com/richd0tcom/friendly-parakeet](https://github.com/richd0tcom/friendly-parakeet)
 
 ## 🙏 Acknowledgements
 
-- Node.js Community
-- MongoDB Drivers
-- Redis
-- TypeScript Team
+- My PC for not dying on me
