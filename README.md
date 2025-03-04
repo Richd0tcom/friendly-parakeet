@@ -100,15 +100,15 @@ npm start
 
 ## 🧪 Testing
 
-Before Testing, ensure you have created at least one Product, Inventory and Sale as well as starting said sale.
+Before Testing, ensure you have created at least one Product, Inventory and Sale as well as started said sale.
 
 The test script only simulates user `purchases` under high traffic conditions.
 
 Remember to replace the id in the test script with that of the sale you just created.
 
-N/B the test script may crash while creating users initially (for reasons I'm too lazy to debug ). If this happens, simple run the test again.
+N/B the test script may crash while creating users initially (for reasons I'm too lazy to debug ). If this happens, simple run the test again (It magically ALWAYS works the second time).
 
-To rerun finished tests, restart the sale or create another one.
+To re-run finished tests, restart the sale or create another one.
 ### Running Tests
 ```bash
 # Run load test
