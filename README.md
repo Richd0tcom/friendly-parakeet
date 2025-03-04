@@ -13,6 +13,7 @@ This is a scalable, high-performance flash sale system designed to handle concur
 ```
 [Placeholder for System Architecture Diagram]
 ```
+![diagram-export-04-03-2025-13_55_18](https://github.com/user-attachments/assets/717ea533-262b-46f2-9f39-0c128245463f)
 
 ### Key Architecture Components
 - API Gateway
@@ -53,7 +54,7 @@ This is a scalable, high-performance flash sale system designed to handle concur
   - Docker
   - Docker Compose
 - Without Docker 
-  - MongoDB (v4.4+)
+  - MongoDB (v4.4+) with a replica set (at least one node)
   - Redis (v6+)
   - npm or yarn
 
