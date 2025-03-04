@@ -1,0 +1,59 @@
+services:
+  # MongoDB Replica Set
+  mongo-1:
+    image: mongo:6.0
+    container_name: mongo-1
+    ports:
+      - "27015:27017"
+    # environment:
+    #   MONGO_INITDB_ROOT_USERNAME: root
+    #   MONGO_INITDB_ROOT_PASSWORD: example
+    volumes:
+      - mongo-data:/data/db
+    command: ["mongod", "--replSet", "rs0", "--bind_ip_all"]
+    healthcheck:
+      test: echo "try { rs.status() } catch (err) { rs.initiate({_id:'rs0',members:[{_id:0,host:'mongo-1:27017'}]}) }" | mongosh --port 27017 --quiet
+      timeout: 10s
+      retries: 5
+
+  # Redis
+  redis:
+    image: redis:7.0
+    container_name: redis
+    ports:
+      - "6377:6379"
+    volumes:
+      - redis-data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 10s
+      retries: 5
+
+  # Node.js API
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: api
+    ports:
+      - "3021:3021"
+    environment:
+      NODE_ENV: development
+      MONGO_URI_DEV: mongodb://mongo-1:27017/flash-sale?replicaSet=rs0
+      REDIS_URI_DEV: redis://redis:6379
+      JWT_SECRET: CIA_level_secret
+      PORT: 3021
+    depends_on:
+      mongo-1:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    volumes:
+      - .:/app
+      - /app/node_modules
+    command: sh -c "sleep 10 && npm run dev"
+
+volumes:
+  mongo-data:
+  redis-data:

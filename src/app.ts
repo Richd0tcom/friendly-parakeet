@@ -25,7 +25,7 @@ connect(process.env.NODE_ENV! == 'production' ? process.env.MONGO_URI_PROD! : pr
   .catch(err => console.error('MongoDB connection error:', err));
 
 // Initialize Redis client
-export const redisClient = new Redis(process.env.NODE_ENV! == 'production' ? process.env.REDIS_URI_PROD! : 'redis://localhost:6379');
+export const redisClient = new Redis(process.env.NODE_ENV! == 'production' ? process.env.REDIS_URI_PROD! : process.env.REDIS_URI_DEV!);
 redisClient.on('connect', () => console.log('Redis connected'));
 redisClient.on('error', (err) => console.error('Redis error:', err));
 
