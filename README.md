@@ -167,7 +167,7 @@ Distributed under the MIT License. See `LICENSE` for more information.
 
 ## 📞 Contact
 
-Your Name - [Richdotcom](mailto:tuberich@gmail.com)
+Name - [Richdotcom](mailto:tuberich@gmail.com)
 
 Project Link: [https://github.com/richd0tcom/friendly-parakeet](https://github.com/richd0tcom/friendly-parakeet)
 
