@@ -9,7 +9,7 @@ const router = Router();
 router.post('/flash-sales', FlashSaleController.createSale);
 router.post('/flash-sales/:id/start', FlashSaleController.startSale);
 router.get('/flash-sales/:id', FlashSaleController.fetchSale);
-// router.get('/flash-sales/:id/leaderboard', FlashSaleController.getLeaderboard);
+router.get('/flash-sales/:id/leaderboard', FlashSaleController.leaderboard);
 
 // Purchase route
 router.post('/purchase', FlashSaleController.buyStock);

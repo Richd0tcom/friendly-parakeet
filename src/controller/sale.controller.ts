@@ -4,6 +4,7 @@ import mongoose, { Document, Types } from "mongoose";
 import { redisClient } from "../app";
 import { io } from "../utils/realtime";
 import { connection } from "mongoose";
+import { SaleEndReason } from "../utils/enums";
 
 export async function fetchSale(req: Request, res: Response): Promise<any> {
   const sale_id = req.params.id;
@@ -90,33 +91,24 @@ export async function buyStock(req: Request, res: Response): Promise<any> {
       { session }
     );
 
-    const f = await Sale.findOneAndUpdate(
-      { _id: sale_id, remaining_units: { $gte: Number(quantity) } }, // Prevents decrement if not enough stock
-      { $inc: { remaining_units: -Number(quantity) } },
-      { session }
-    );
-
-
-
     // // Complete the purchase
     await session.commitTransaction();
 
     // Check if sale is over after this purchase
     const newInventory = await redisClient.get(inventoryKey);
     if (parseInt(newInventory as string, 10) <= 0) {
-      await endFlashSale(sale_id);
+      await endFlashSale(sale_id, SaleEndReason.INVENTORY_OUT_OF_STOCK);
     }
-    // const status = await getFlashSaleStatus(sale_id)
 
     // Broadcast inventory update
-
     io.emit("inventoryUpdate", {
       sale,
       currentInventory: sale.remaining_units,
     });
   } catch (error) {
+    
     failed = true;
-    // If MongoDB transaction fails, rollback Redis changes
+    
     await redisClient.incrby(inventoryKey, quantity);
     await session.abortTransaction();
     throw error;
@@ -221,29 +213,98 @@ async function getFlashSaleStatus(flashSaleId: string): Promise<any> {
   };
 }
 
-async function endFlashSale(flashSaleId: string): Promise<any> {
-  const session = await mongoose.startSession();
-  session.startTransaction();
+async function endFlashSale(flashSaleId: string, reason: SaleEndReason): Promise<any> {
 
   try {
-    const flashSale = await Sale.findById(flashSaleId).session(session);
+    const flashSale = await Sale.findById(flashSaleId)
     if (!flashSale) {
       throw new Error("Flash sale not found");
     }
 
     flashSale.status = "ended";
     flashSale.end_time = new Date();
-    await flashSale.save({ session });
 
-    // Update Redis
+    if (reason == SaleEndReason.INVENTORY_OUT_OF_STOCK) {
+      flashSale.remaining_units = 0
+    }
+    await flashSale.save();
+
+
     await redisClient.set(`flashsale:${flashSaleId}:status`, "ended");
 
-    await session.commitTransaction();
     return flashSale;
   } catch (error) {
-    await session.abortTransaction();
+    // await session.abortTransaction();
     throw error;
   } finally {
-    session.endSession();
+    // session.endSession();
   }
+}
+
+
+export async function leaderboard(req: Request, res: Response): Promise<any> {
+
+  const product_id = req.params.id
+
+  const leaderboard = await Order.aggregate([
+    {
+      $match: { 
+        product_id: new Types.ObjectId(product_id)
+      }
+    },
+    {
+      $lookup: {
+        from: 'users',
+        localField: 'user_id',
+        foreignField: '_id',
+        as: 'user',
+      },
+    },
+    { $unwind: '$user' },
+    { $sort: { createdAt: 1 } },
+    {
+      $group: {
+        _id: null,
+        purchases: { $push: '$$ROOT' },
+      },
+    },
+    { $unwind: '$purchases' },
+    {
+      $project: {
+        _id: 0,
+        user: {
+          username: '$purchases.user.name',
+          email: '$purchases.user.email',
+        },
+        quantity: '$purchases.quantity',
+        createdAt: '$purchases.createdAt',
+      },
+    },
+    {
+      $sort: { createdAt: 1 },
+    },
+    {
+      $group: {
+        _id: null,
+        purchases: { $push: '$$ROOT' },
+      },
+    },
+    {
+      $unwind: {
+        path: '$purchases',
+        includeArrayIndex: 'rank',
+      },
+    },
+    {
+      $project: {
+        _id: 0,
+        rank: { $add: ['$rank', 1] },
+        user: '$purchases.user',
+        quantity: '$purchases.quantity',
+        createdAt: '$purchases.createdAt',
+      },
+    },
+  ]);
+
+  return res.status(200).json({sucess: true, data: leaderboard});
 }

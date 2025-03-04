@@ -32,8 +32,8 @@ async function purchase(userId: string): Promise<any> {
   try {
     const response = await axios.post(`${BASE_URL}/purchase`, {
       user_id: userId,
-      sale_id: '67c6229af3aacb324d59745b',
-      quantity: 1
+      sale_id: '67c6229af3aacb324d59745b', // replace with your own id
+      quantity: Math.floor(Math. random() * (8 - 1) + 1)
     });
     return { user_id: userId, success: true, data: response.data };
   } catch (error: any) {
@@ -88,7 +88,7 @@ async function runLoadTest() {
   
   // Verify final inventory
   try {
-    const response = await axios.get(`${BASE_URL}/flash-sales/67c6229af3aacb324d59745b`);
+    const response = await axios.get(`${BASE_URL}/flash-sales/67c6229af3aacb324d59745b`); //replace with your own id
     console.log(`Final inventory: ${response.data.data.currentInventory}`);
     if (response.data.data.currentInventory === 0 && successCount === 200) {
       console.log('✅ Test PASSED: All inventory sold, no overbuying or underbuying');
