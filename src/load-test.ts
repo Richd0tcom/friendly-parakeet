@@ -3,6 +3,7 @@ import axios, { AxiosError } from 'axios';
 const BASE_URL = 'http://localhost:7321/api';
 const NUM_USERS = 300; // More than the available inventory 300
 const CONCURRENT_REQUESTS = 50; // Number of concurrent requests 50
+let TxCount = 0
 
 // Create an array of user IDs
 const userIds = Array.from({ length: NUM_USERS }, (_, i) => `user_${i + 1}`);
@@ -22,10 +23,15 @@ async function createUsers(name: string, email: string): Promise<any>{
   }
 }
 async function runCreateUsers(): Promise<any[]> {
-  const prom = userIds.map((userID, i)=> createUsers(userID, `xam+${i}@gmail.com`))
+  const prom = userIds.map((userID, i)=> createUsers(userID, `${(Math.random() + 1).toString(36).substring(7)}+${i}@gmail.com`))
   return Promise.all(prom);
 }
 
+function getRandomQuantity() {
+  const rand = Math.floor(Math. random() * (8 - 1) + 1)
+  TxCount+= rand
+  return rand
+}
 
 // Function to simulate a purchase
 async function purchase(userId: string): Promise<any> {
@@ -33,7 +39,7 @@ async function purchase(userId: string): Promise<any> {
     const response = await axios.post(`${BASE_URL}/purchase`, {
       user_id: userId,
       sale_id: '67c6229af3aacb324d59745b', // replace with your own id
-      quantity: Math.floor(Math. random() * (8 - 1) + 1)
+      quantity: getRandomQuantity()
     });
     return { user_id: userId, success: true, data: response.data };
   } catch (error: any) {
@@ -69,6 +75,7 @@ async function runLoadTest() {
   
   let successCount = 0;
   let failCount = 0;
+  let totalItemsPurchased = 0
   
   // Process each batch
   for (const batch of batches) {
@@ -79,6 +86,10 @@ async function runLoadTest() {
       if (result.success) successCount++;
       else failCount++;
     });
+
+    totalItemsPurchased  += results
+  .filter(result => result.success)
+  .reduce((total, result) => total + (result?.data?.quantity || 0), 0);
     
     // Small delay between batches to simulate realistic user behavior
     await new Promise(resolve => setTimeout(resolve, 100));
@@ -90,14 +101,17 @@ async function runLoadTest() {
   try {
     const response = await axios.get(`${BASE_URL}/flash-sales/67c6229af3aacb324d59745b`); //replace with your own id
     console.log(`Final inventory: ${response.data.data.currentInventory}`);
-    if (response.data.data.currentInventory === 0 && successCount === 200) {
-      console.log('✅ Test PASSED: All inventory sold, no overbuying or underbuying');
-    } else if (response.data.data.currentInventory < 0) {
+    console.log(`Expected TxCount: ${totalItemsPurchased}`)
+    if (totalItemsPurchased === 200 && response.data.data.currentInventory == 0) {
+      console.log('✅ Test PASSED: Exact inventory sold, no overbuying or underbuying');
+    } else if (totalItemsPurchased > 200) {
       console.log('❌ Test FAILED: Overbuying detected');
-    } else if (successCount < 200 && response.data.data.currentInventory === 0) {
-      console.log('❌ Test FAILED: Underbuying detected');
-    } else if (response.data.data.currentInventory > 0 && successCount === 200) {
-      console.log('❌ Test FAILED: Inventory tracking inconsistency');
+    } else if (totalItemsPurchased < 200 && response.data.data.currentInventory === 0) {
+      console.log('❌ Test FAILED: Underbuying detected - not all inventory was sold');
+    } else if (totalItemsPurchased < 200 && response.data.data.currentInventory > 0) {
+      console.log('❌ Test FAILED: Inventory not fully utilized');
+    } else {
+      console.log('❌ Test FAILED: Unexpected inventory state');
     }
   } catch (error) {
     console.error('Error verifying final inventory:', error);

@@ -9,10 +9,8 @@ import { SaleEndReason } from "../utils/enums";
 export async function fetchSale(req: Request, res: Response): Promise<any> {
   const sale_id = req.params.id;
   //fetch from cache
-
-  const sale = await getFlashSaleStatus(sale_id);
-
   //cache miss?  fetch from db
+  const sale = await getFlashSaleStatus(sale_id);
 
   if (!sale) return res.status(404).json({ msg: "Product not found" });
 
@@ -51,7 +49,7 @@ export async function buyStock(req: Request, res: Response): Promise<any> {
   const currentInventory = parseInt(currentInventoryStr, 10);
   console.log("Current Inventory:", currentInventory);
 
-  // **Step 2: Check Inventory Before Proceeding**
+ 
   if (currentInventory < quantity) {
     await redisClient.unwatch(); // Release watch if condition fails
     return res.status(403).json({ msg: "Not enough units available" });
@@ -65,6 +63,11 @@ export async function buyStock(req: Request, res: Response): Promise<any> {
 
   if (!results) {
     throw new Error("Inventory update failed due to concurrent modification");
+  }
+
+  if (Number(results[0][1]) < 0) {
+    await redisClient.incrby(inventoryKey, quantity);
+    return res.status(403).json({success: false, msg: "Not enough units available" });
   }
 
   console.log("Inventory decremented successfully.");
